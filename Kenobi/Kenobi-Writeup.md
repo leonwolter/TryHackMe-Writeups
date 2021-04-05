@@ -240,7 +240,7 @@ Nmap done: 1 IP address (1 host up) scanned in 358.59 seconds
 
 ```
 
-### Enumerateing Samba for shares
+### Enumerating Samba for shares
 
 The output of the previous command showed us that the two SMB ports are open on the target machine: 139 and 445. Now we can use nmap to find out, how many and which shares are present on this machine.
 
@@ -291,4 +291,94 @@ We can now use an SMB client to connect to the target machines network shares. T
 
 *Once you're connected, list the files on the share. What is the file can you see?*
 
-The file we can find on the server is called log.txt.
+The file we can find on the server is called log.txt. This file contains information on
+
++ Information generated for Kenobi when generating an SSH key for the user
++ Information about the ProFTPD server.
+
+*What port is FTP running on?*
+
+The ProFTPD server runs on the standard FTP port 21.
+
+*What mount can we see?*
+
+The previous nmap scan showed port 111 was open with `rpcbind` running:
+
+```
+111/tcp  open  rpcbind     2-4 (RPC #100000).
+```
+
+Using nmap again to enumerate this via `nmap -p 111 --script=nfs-ls,nfs-statfs,nfs-showmount 10.10.135.224` reveals /var:
+
+``` 
+Starting Nmap 7.91 ( https://nmap.org ) at 2021-04-05 06:23 CDT
+Nmap scan report for 10.10.135.224
+Host is up (0.037s latency).
+
+PORT    STATE SERVICE
+111/tcp open  rpcbind
+| nfs-showmount: 
+|_  /var *
+
+Nmap done: 1 IP address (1 host up) scanned in 0.57 seconds
+```
+
+### Gain initial access with ProFtpd
+
+ProFtpd is a free and open-source FTP server, compatible with Unix and Windows systems. Its also been vulnerable in the past software versions.
+
+*What is the version?*
+
+The version number of ProFtpd is 1.3.5 as shown by our previous nmap scan: `21/tcp   open  ftp         ProFTPD 1.3.5`.
+
+*How many exploits are there for the ProFTPd running?*
+
+To find exploits for a particular software we can use searchsploit via `searchsploit ProFTPd`:
+
+```
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ---------------------------------
+ Exploit Title                                                                                                                                                                    |  Path
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ---------------------------------
+FreeBSD - 'ftpd / ProFTPd' Remote Command Execution                                                                                                                               | freebsd/remote/18181.txt
+ProFTPd - 'ftpdctl' 'pr_ctrls_connect' Local Overflow                                                                                                                             | linux/local/394.c
+ProFTPd - 'mod_mysql' Authentication Bypass                                                                                                                                       | multiple/remote/8037.txt
+ProFTPd - 'mod_sftp' Integer Overflow Denial of Service (PoC)                                                                                                                     | linux/dos/16129.txt
+ProFTPd 1.2 - 'SIZE' Remote Denial of Service                                                                                                                                     | linux/dos/20536.java
+ProFTPd 1.2 < 1.3.0 (Linux) - 'sreplace' Remote Buffer Overflow (Metasploit)                                                                                                      | linux/remote/16852.rb
+ProFTPd 1.2 pre1/pre2/pre3/pre4/pre5 - Remote Buffer Overflow (1)                                                                                                                 | linux/remote/19475.c
+ProFTPd 1.2 pre1/pre2/pre3/pre4/pre5 - Remote Buffer Overflow (2)                                                                                                                 | linux/remote/19476.c
+ProFTPd 1.2 pre6 - 'snprintf' Remote Root                                                                                                                                         | linux/remote/19503.txt
+ProFTPd 1.2.0 pre10 - Remote Denial of Service                                                                                                                                    | linux/dos/244.java
+ProFTPd 1.2.0 rc2 - Memory Leakage                                                                                                                                                | linux/dos/241.c
+ProFTPd 1.2.10 - Remote Users Enumeration                                                                                                                                         | linux/remote/581.c
+ProFTPd 1.2.7 < 1.2.9rc2 - Remote Code Execution / Brute Force                                                                                                                    | linux/remote/110.c
+ProFTPd 1.2.7/1.2.8 - '.ASCII' File Transfer Buffer Overrun                                                                                                                       | linux/dos/23170.c
+ProFTPd 1.2.9 RC1 - 'mod_sql' SQL Injection                                                                                                                                       | linux/remote/43.pl
+ProFTPd 1.2.9 rc2 - '.ASCII' File Remote Code Execution (1)                                                                                                                       | linux/remote/107.c
+ProFTPd 1.2.9 rc2 - '.ASCII' File Remote Code Execution (2)                                                                                                                       | linux/remote/3021.txt
+ProFTPd 1.2.x - 'STAT' Denial of Service                                                                                                                                          | linux/dos/22079.sh
+ProFTPd 1.3 - 'mod_sql' 'Username' SQL Injection                                                                                                                                  | multiple/remote/32798.pl
+ProFTPd 1.3.0 (OpenSUSE) - 'mod_ctrls' Local Stack Overflow                                                                                                                       | unix/local/10044.pl
+ProFTPd 1.3.0 - 'sreplace' Remote Stack Overflow (Metasploit)                                                                                                                     | linux/remote/2856.pm
+ProFTPd 1.3.0/1.3.0a - 'mod_ctrls' 'support' Local Buffer Overflow (1)                                                                                                            | linux/local/3330.pl
+ProFTPd 1.3.0/1.3.0a - 'mod_ctrls' 'support' Local Buffer Overflow (2)                                                                                                            | linux/local/3333.pl
+ProFTPd 1.3.0/1.3.0a - 'mod_ctrls' exec-shield Local Overflow                                                                                                                     | linux/local/3730.txt
+ProFTPd 1.3.0a - 'mod_ctrls' 'support' Local Buffer Overflow (PoC)                                                                                                                | linux/dos/2928.py
+ProFTPd 1.3.2 rc3 < 1.3.3b (FreeBSD) - Telnet IAC Buffer Overflow (Metasploit)                                                                                                    | linux/remote/16878.rb
+ProFTPd 1.3.2 rc3 < 1.3.3b (Linux) - Telnet IAC Buffer Overflow (Metasploit)                                                                                                      | linux/remote/16851.rb
+ProFTPd 1.3.3c - Compromised Source Backdoor Remote Code Execution                                                                                                                | linux/remote/15662.txt
+ProFTPd 1.3.5 - 'mod_copy' Command Execution (Metasploit)                                                                                                                         | linux/remote/37262.rb
+ProFTPd 1.3.5 - 'mod_copy' Remote Command Execution                                                                                                                               | linux/remote/36803.py
+ProFTPd 1.3.5 - File Copy                                                                                                                                                         | linux/remote/36742.txt
+ProFTPD 1.3.7a - Remote Denial of Service                                                                                                                                         | multiple/dos/49697.py
+ProFTPd 1.x - 'mod_tls' Remote Buffer Overflow                                                                                                                                    | linux/remote/4312.c
+ProFTPd IAC 1.3.x - Remote Command Execution                                                                                                                                      | linux/remote/15449.pl
+ProFTPd-1.3.3c - Backdoor Command Execution (Metasploit)                                                                                                                          | linux/remote/16921.rb
+WU-FTPD 2.4.2 / SCO Open Server 5.0.5 / ProFTPd 1.2 pre1 - 'realpath' Remote Buffer Overflow (1)                                                                                  | linux/remote/19086.c
+WU-FTPD 2.4.2 / SCO Open Server 5.0.5 / ProFTPd 1.2 pre1 - 'realpath' Remote Buffer Overflow (2)                                                                                  | linux/remote/19087.c
+WU-FTPD 2.4/2.5/2.6 / Trolltech ftpd 1.2 / ProFTPd 1.2 / BeroFTPD 1.3.4 FTP - glob Expansion                                                                                      | linux/remote/20690.sh
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ---------------------------------
+Shellcodes: No Results
+```
+
+As ProFTPd is running in version 1.3.5, there are 3 exploits we can use.
